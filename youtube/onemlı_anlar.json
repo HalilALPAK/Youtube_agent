@@ -1,0 +1,268 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    url: \"https://www.youtube.com/watch?v=NfYX1MWUHYs\"\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        1792
+      ],
+      "id": "6773b7d9-50e9-44fc-a7b3-2d97380f4689",
+      "name": "Code in JavaScript8"
+    },
+    {
+      "parameters": {
+        "url": "http://127.0.0.1:5001/transcript?id=NfYX1MWUHYs",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2096,
+        1792
+      ],
+      "id": "35bf6311-acc8-4aa4-8521-96cf67ac37c0",
+      "name": "Get Transcript4",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const t = $json.transcript;\nconst clean = t\n  .filter(x => !x.text.includes('[')) // [Müzik], [Alkış] vs at\n  .map(x => `${x.text}`)\n  .join(' ');\nreturn [{ text: clean, raw: t }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        1792
+      ],
+      "id": "e05055b2-2e05-498a-81ac-a3952bacaee9",
+      "name": "Code in JavaScript9"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Aşağıdaki konuşma metninden *Kurtuluş savaşı* ile ilgili tarihsel anekdotları bul.\n\nKurallar:\n- Sadece kısa cümleleri değil, anekdotun anlamlı olması için gerekli ön,arka cümleleri ve bağlamı da al.\n- Her anekdot yaklaşık olarak 100 saniyelik bir konuşma uzunluğuna denk gelmelidir.\n- Anekdotun başladığı bölümün tam metinden çekilmiş hali “start_text” alanında olmalıdır.\n- Seçim nedeninin kısa açıklaması “reason” alanında olmalıdır.\n- ÇIKTI SADECE geçerli bir JSON olmalı. JSON dışında hiçbir açıklama, yorum veya metin koyma.\n- Kod bloğu, ```json veya başka bir formatlama kullanma. Sadece düz JSON üret.\n\nBeklenen JSON formatı:\n[\n  {\n    \"start_text\": \"anekdotun metinden başlayan kısmı\",\n    \"reason\": \"Bu kısmı neden seçtiğinin kısa açıklaması\"\n  }\n]\n\nKonuşma metni:\n{{ $json[\"text\"] }}\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        2512,
+        1792
+      ],
+      "id": "0c704869-ee3a-410d-9d0d-3295129a103e",
+      "name": "AI Agent2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2512,
+        1936
+      ],
+      "id": "ca850d92-0432-424e-a6f7-40248504ef16",
+      "name": "Google Gemini Chat Model2"
+    },
+    {
+      "parameters": {
+        "url": "http://127.0.0.1:5001/transcript?id=NfYX1MWUHYs",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2704,
+        1600
+      ],
+      "id": "bca0487f-3b2d-4f45-8eff-d7cbce8a1871",
+      "name": "Get Transcript5",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output || \"\";\n\n// 1) Codeblock içinden al\nlet jsonText = null;\nconst codeblock = raw.match(/```json([\\s\\S]*?)```/i);\n\nif (codeblock) {\n  jsonText = codeblock[1];\n} else {\n  // 2) Fallback '[' ... ']' arasında al\n  const match = raw.match(/\\[[\\s\\S]*\\]/);\n  if (match) jsonText = match[0];\n}\n\nlet highlights = [];\n\nif (jsonText) {\n  try {\n    // 3) JSON dışı tüm karakterleri temizle\n    jsonText = jsonText\n      .replace(/^[^\\[]*/, \"\")   // '[' öncesini sil\n      .replace(/[^\\]]*$/, \"\");  // ']' sonrasını sil\n\n    highlights = JSON.parse(jsonText.trim());\n  } catch (e) {\n    console.error(\"JSON parse hatası:\", e);\n  }\n}\n\nreturn [\n  {\n    json: { highlights }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        1792
+      ],
+      "id": "516218ca-d3f7-4da7-975a-92c1e6a37a31",
+      "name": "Code in JavaScript10"
+    },
+    {
+      "parameters": {
+        "jsCode": "function normalize(str) {\n  return str\n    .toLowerCase()\n    .replace(/[^a-zçğıöşü0-9\\s]/gi, \"\")\n    .trim();\n}\n\nfunction similarity(a, b) {\n  const setA = new Set(a.split(\" \"));\n  const setB = new Set(b.split(\" \"));\n  const inter = [...setA].filter(x => setB.has(x));\n  return inter.length / Math.min(setA.size, setB.size);\n}\n\nconst transcriptData = $input.all().find(i => i.json.transcript)?.json.transcript || [];\nconst highlightData = $input.all().find(i => i.json.highlights)?.json.highlights || [];\n\nconst results = [];\n\nfor (const highlight of highlightData) {\n  const query = normalize(highlight.start_text);\n  let foundIndex = -1;\n  let bestSim = 0;\n\n  for (let i = 0; i < transcriptData.length - 2; i++) {\n    const comboText = normalize(\n      transcriptData.slice(i, i + 3).map(t => t.text).join(\" \")\n    );\n    const sim = similarity(query, comboText);\n    if (sim > bestSim) {\n      bestSim = sim;\n      foundIndex = i;\n    }\n  }\n\n  if (bestSim > 0.4 && foundIndex !== -1) {\n    // 30-60 saniyelik segment oluşturma\n    let seg = transcriptData.slice(foundIndex, foundIndex + 3);\n    let totalDuration = seg.reduce((sum, t) => sum + t.duration, 0);\n    while (totalDuration < 45 && (foundIndex + seg.length) < transcriptData.length) {\n      seg.push(transcriptData[foundIndex + seg.length]);\n      totalDuration += seg[seg.length - 1].duration;\n    }\n\n    const start = seg[0].start;\n    const end = seg[seg.length - 1].start + seg[seg.length - 1].duration;\n    const found_text = seg.map(t => t.text).join(\" \");\n\n    results.push({\n      found_text,\n      reason: highlight.reason,\n      start,\n      end,\n      similarity: bestSim.toFixed(2)\n    });\n  } else {\n    results.push({\n      found_text: null,\n      reason: highlight.reason,\n      start: null,\n      end: null,\n      similarity: bestSim.toFixed(2),\n      note: `Eşleşme bulunamadı: ${highlight.start_text}`\n    });\n  }\n}\n\n// Eğer hiçbir veri bulunmadıysa\nif (results.length === 0) {\n  results.push({ info: \"Hiç eşleşme bulunamadı.\" });\n}\n\n// ✅ n8n için uygun formatta döndür\nreturn results.map(r => ({ json: r }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3440,
+        1760
+      ],
+      "id": "f95a8d80-cef7-48b8-8bee-ea92e0970789",
+      "name": "Code in JavaScript11"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3216,
+        1760
+      ],
+      "id": "dc6d35d5-2340-4b29-8a06-69617985d104",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=ffmpeg -i \"C:\\Users\\User\\Desktop\\trans\\video.mp4\" -ss {{$json[\"start\"]}} -to {{$json[\"end\"]}} -c:v libx264 -c:a aac -strict experimental \"C:\\Users\\User\\Desktop\\trans\\clip_{{$json[\"start\"]}}_{{$json[\"end\"]}}.mp4\"\n"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3664,
+        1760
+      ],
+      "id": "0c006db1-cc58-44df-b795-c8872ae3ad3e",
+      "name": "Execute Command2"
+    },
+    {
+      "parameters": {
+        "content": "KLİP Çıkarma\n",
+        "height": 880,
+        "width": 2752
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1584,
+        1312
+      ],
+      "typeVersion": 1,
+      "id": "231f67b7-60cf-4804-9108-75d1f63cb6bd",
+      "name": "Sticky Note1"
+    }
+  ],
+  "connections": {
+    "Code in JavaScript8": {
+      "main": [
+        [
+          {
+            "node": "Get Transcript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Transcript4": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript9",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript9": {
+      "main": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Transcript5": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript10": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript11": {
+      "main": [
+        [
+          {
+            "node": "Execute Command2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "99fa8329a052f4aa41b45e850fff2c12177cccd92fba3ec014bd05698ca84c28"
+  }
+}
